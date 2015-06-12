@@ -8,6 +8,7 @@ import android.view.View.OnClickListener;
 import android.view.ViewGroup;
 import in.srain.cube.mints.base.BlockMenuFragment;
 import in.srain.cube.util.LocalDisplay;
+import in.srain.cube.views.ptr.PtrBothHandler;
 import in.srain.cube.views.ptr.PtrDefaultHandler;
 import in.srain.cube.views.ptr.PtrFrameLayout;
 import in.srain.cube.views.ptr.PtrHandler;
@@ -18,6 +19,7 @@ import in.srain.cube.views.ptr.demo.ui.storehouse.StoreHouseUsingString;
 import in.srain.cube.views.ptr.demo.ui.storehouse.StoreHouseUsingStringArray;
 import in.srain.cube.views.ptr.demo.ui.viewpager.ViewPagerActivity;
 import in.srain.cube.views.ptr.header.StoreHouseHeader;
+import in.srain.cube.views.ptr.util.PtrCLog;
 
 import java.util.ArrayList;
 
@@ -186,10 +188,11 @@ public class PtrDemoHomeFragment extends BlockMenuFragment {
             }
         }));
 
-        itemInfos.add(newItemInfo(R.string.ptr_demo_placeholder, R.color.cube_mints_4d90fe, new OnClickListener() {
+        itemInfos.add(newItemInfo(R.string.ptr_demo_with_recycler_view, R.color.cube_mints_4d90fe, new OnClickListener() {
 
             @Override
             public void onClick(View v) {
+                getContext().pushFragmentToBackStack(WithRecyclerView.class, null);
             }
         }));
         itemInfos.add(newItemInfo(R.string.ptr_demo_placeholder, R.color.cube_mints_4d90fe, new OnClickListener() {
@@ -219,7 +222,7 @@ public class PtrDemoHomeFragment extends BlockMenuFragment {
         ptrFrameLayout.setDurationToCloseHeader(1500);
         ptrFrameLayout.setHeaderView(header);
         ptrFrameLayout.addPtrUIHandler(header);
-        ptrFrameLayout.setPtrHandler(new PtrHandler() {
+        ptrFrameLayout.setPtrHandler(new PtrBothHandler() {
             @Override
             public boolean checkCanDoRefresh(PtrFrameLayout frame, View content, View header) {
                 return PtrDefaultHandler.checkContentCanBePulledDown(frame, content, header);
@@ -233,6 +236,10 @@ public class PtrDemoHomeFragment extends BlockMenuFragment {
                         ptrFrameLayout.refreshComplete();
                     }
                 }, 1500);
+            }
+            @Override
+            public void onLoadMoreBegin() {
+                PtrCLog.e("xxx", "loadMore");
             }
         });
         return view;

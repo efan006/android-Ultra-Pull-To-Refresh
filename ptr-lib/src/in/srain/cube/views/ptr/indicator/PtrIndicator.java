@@ -137,12 +137,32 @@ public class PtrIndicator {
         return mCurrentPos > POS_START;
     }
 
+    public boolean hasLeftEndPosition(){
+        return mCurrentPos < POS_START;
+    }
+
+    public boolean hasLeft(){
+        return mCurrentPos != POS_START;
+    }
+
     public boolean hasJustLeftStartPosition() {
         return mLastPos == POS_START && hasLeftStartPosition();
     }
 
+    public boolean hasJustLeftEndPosition() {
+        return mLastPos == POS_START && hasLeftEndPosition();
+    }
+
     public boolean hasJustBackToStartPosition() {
-        return mLastPos != POS_START && isInStartPosition();
+        return mLastPos > POS_START && isInStartPosition();
+    }
+
+    public boolean hasJustBackToEndPosition() {
+        return mLastPos < POS_START && isInStartPosition();
+    }
+
+    public boolean hasCrossBound() {
+        return mLastPos * mCurrentPos < 0;
     }
 
     public boolean isOverOffsetToRefresh() {
@@ -167,6 +187,10 @@ public class PtrIndicator {
 
     public boolean isOverOffsetToKeepHeaderWhileLoading() {
         return mCurrentPos > getOffsetToKeepHeaderWhileLoading();
+    }
+
+    public boolean isPulledUp(){
+        return mCurrentPos < 0;
     }
 
     public void setOffsetToKeepHeaderWhileLoading(int offset) {

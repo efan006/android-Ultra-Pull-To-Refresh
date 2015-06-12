@@ -2,7 +2,9 @@ package in.srain.cube.views.ptr;
 
 import android.content.Context;
 import android.content.res.TypedArray;
+import android.support.v4.view.ViewCompat;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.*;
 import android.widget.Scroller;
 import android.widget.TextView;
@@ -20,7 +22,8 @@ public class PtrFrameLayout extends ViewGroup {
     public final static byte PTR_STATUS_INIT = 1;
     public final static byte PTR_STATUS_PREPARE = 2;
     public final static byte PTR_STATUS_LOADING = 3;
-    public final static byte PTR_STATUS_COMPLETE = 4;
+    public final static byte PTR_STATUS_LOADING_BOTTOM = 4;
+    public final static byte PTR_STATUS_COMPLETE = 5;
 
     private static final boolean DEBUG_LAYOUT = true;
     public static boolean DEBUG = false;
@@ -67,6 +70,9 @@ public class PtrFrameLayout extends ViewGroup {
     private long mLoadingStartTime = 0;
     private PtrIndicator mPtrIndicator;
     private boolean mHasSendCancelEvent = false;
+
+    private boolean pullDownEnable = true;
+    private boolean pullUpEnable = true;
 
     public PtrFrameLayout(Context context) {
         this(context, null);
@@ -272,6 +278,16 @@ public class PtrFrameLayout extends ViewGroup {
                         return true;
                     }
                     return dispatchTouchEventSupper(e);
+                } else if (mPtrIndicator.hasLeftEndPosition()){
+                    if (DEBUG) {
+                        PtrCLog.d(LOG_TAG, "call onRelease when user release");
+                    }
+                    onRelease(false);
+                    if (mPtrIndicator.hasMovedAfterPressedDown()) {
+                        sendCancelEvent();
+                        return true;
+                    }
+                    return dispatchTouchEventSupper(e);
                 } else {
                     return dispatchTouchEventSupper(e);
                 }
@@ -305,25 +321,50 @@ public class PtrFrameLayout extends ViewGroup {
                 }
 
                 boolean moveDown = offsetY > 0;
-                boolean moveUp = !moveDown;
-                boolean canMoveUp = mPtrIndicator.hasLeftStartPosition();
-
-                if (DEBUG) {
-                    boolean canMoveDown = mPtrHandler != null && mPtrHandler.checkCanDoRefresh(this, mContent, mHeaderView);
-                    PtrCLog.v(LOG_TAG, "ACTION_MOVE: offsetY:%s, currentPos: %s, moveUp: %s, canMoveUp: %s, moveDown: %s: canMoveDown: %s", offsetY, mPtrIndicator.getCurrentPosY(), moveUp, canMoveUp, moveDown, canMoveDown);
+                boolean moveSelf = false;
+                if (mPtrIndicator.isInStartPosition()){
+                    if (moveDown){
+                        if (pullDownEnable && contentReachTop() && mStatus != PTR_STATUS_LOADING_BOTTOM){
+                            moveSelf = true;
+                        }
+                    } else {
+                        if (pullUpEnable && contentReachBottom() && mStatus != PTR_STATUS_LOADING){
+                            moveSelf = true;
+                        }
+                    }
+                } else {
+                    moveSelf = true;
                 }
 
-                // disable move when header not reach top
-                if (moveDown && mPtrHandler != null && !mPtrHandler.checkCanDoRefresh(this, mContent, mHeaderView)) {
+
+                if (moveSelf){
+                    movePos(offsetY);
+                    return true;
+                } else {
                     return dispatchTouchEventSupper(e);
                 }
 
-                if ((moveUp && canMoveUp) || moveDown) {
-                    movePos(offsetY);
-                    return true;
-                }
+//
+//                boolean canMoveDown = pullDownEnable && (mPtrIndicator.hasLeftEndPosition() || (contentReachTop() && mStatus != PTR_STATUS_LOADING_BOTTOM));
+//                boolean canMoveUp = pullUpEnable && (mPtrIndicator.hasLeftStartPosition() || (contentReachBottom() && mStatus != PTR_STATUS_LOADING));
+//                PtrCLog.e("xxx", "canMoveDown>>"+canMoveDown + " | canMoveUp>>"+ canMoveUp);
+//                if((moveUp && canMoveUp) || (moveDown && canMoveDown)){
+//                    movePos(offsetY);
+//                    return true;
+//                } else {
+//                    return dispatchTouchEventSupper(e);
+//                }
+
         }
         return dispatchTouchEventSupper(e);
+    }
+
+    private boolean contentReachTop(){
+        return !ViewCompat.canScrollVertically(mContent, -1);
+    }
+
+    private boolean contentReachBottom(){
+        return !ViewCompat.canScrollVertically(mContent, 1);
     }
 
     /**
@@ -332,24 +373,10 @@ public class PtrFrameLayout extends ViewGroup {
      * @param deltaY
      */
     private void movePos(float deltaY) {
-        // has reached the top
-        if ((deltaY < 0 && mPtrIndicator.isInStartPosition())) {
-            if (DEBUG) {
-                PtrCLog.e(LOG_TAG, String.format("has reached the top"));
-            }
-            return;
-        }
-
         int to = mPtrIndicator.getCurrentPosY() + (int) deltaY;
-
-        // over top
-        if (mPtrIndicator.willOverTop(to)) {
-            if (DEBUG) {
-                PtrCLog.e(LOG_TAG, String.format("over top"));
-            }
-            to = PtrIndicator.POS_START;
+        if (to * mPtrIndicator.getCurrentPosY() < 0){
+            to = 0;
         }
-
         mPtrIndicator.setCurrentPos(to);
         int change = to - mPtrIndicator.getLastPosY();
         updatePos(change);
@@ -371,7 +398,6 @@ public class PtrFrameLayout extends ViewGroup {
         // leave initiated position or just refresh complete
         if ((mPtrIndicator.hasJustLeftStartPosition() && mStatus == PTR_STATUS_INIT) ||
                 (mPtrIndicator.goDownCrossFinishPosition() && mStatus == PTR_STATUS_COMPLETE && isEnabledNextPtrAtOnce())) {
-
             mStatus = PTR_STATUS_PREPARE;
             mPtrUIHandlerHolder.onUIRefreshPrepare(this);
             if (DEBUG) {
@@ -379,8 +405,26 @@ public class PtrFrameLayout extends ViewGroup {
             }
         }
 
+        if (mPtrIndicator.hasJustLeftEndPosition() && mStatus == PTR_STATUS_INIT){
+            mStatus = PTR_STATUS_LOADING_BOTTOM;
+            PtrCLog.e(LOG_TAG, "PtrUIHandler: bottom release" + mPtrHandler);
+            if (mPtrHandler instanceof PtrBothHandler){
+                ((PtrBothHandler)mPtrHandler).onLoadMoreBegin();
+            }
+        }
+
         // back to initiated position
         if (mPtrIndicator.hasJustBackToStartPosition()) {
+            tryToNotifyReset();
+
+            // recover event to children
+            if (isUnderTouch) {
+                sendDownEvent();
+            }
+        }
+
+        // back to initiated position
+        if (mPtrIndicator.hasJustBackToEndPosition()) {
             tryToNotifyReset();
 
             // recover event to children
@@ -430,25 +474,31 @@ public class PtrFrameLayout extends ViewGroup {
     private void onRelease(boolean stayForLoading) {
 
         tryToPerformRefresh();
-
-        if (mStatus == PTR_STATUS_LOADING) {
-            // keep header for fresh
-            if (mKeepHeaderWhenRefresh) {
-                // scroll header back
-                if (mPtrIndicator.isOverOffsetToKeepHeaderWhileLoading() && !stayForLoading) {
-                    mScrollChecker.tryToScrollTo(mPtrIndicator.getOffsetToKeepHeaderWhileLoading(), mDurationToClose);
+        switch (mStatus){
+            case PTR_STATUS_LOADING:
+                // keep header for fresh
+                if (mKeepHeaderWhenRefresh) {
+                    // scroll header back
+                    if (mPtrIndicator.isOverOffsetToKeepHeaderWhileLoading() && !stayForLoading) {
+                        mScrollChecker.tryToScrollTo(mPtrIndicator.getOffsetToKeepHeaderWhileLoading(), mDurationToClose);
+                    } else {
+                        // do nothing
+                    }
                 } else {
-                    // do nothing
+                    tryScrollBackToTopWhileLoading();
                 }
-            } else {
-                tryScrollBackToTopWhileLoading();
-            }
-        } else {
-            if (mStatus == PTR_STATUS_COMPLETE) {
+                break;
+            case PTR_STATUS_LOADING_BOTTOM:
+                if (mPtrIndicator.isPulledUp()){
+                    tryScrollBackToTopWhileLoading();
+                }
+                break;
+            case PTR_STATUS_COMPLETE:
                 notifyUIRefreshComplete(false);
-            } else {
+                break;
+            default:
                 tryScrollBackToTopAbortRefresh();
-            }
+                break;
         }
     }
 
@@ -643,6 +693,7 @@ public class PtrFrameLayout extends ViewGroup {
         if (mPtrUIHandlerHolder.hasHandler()) {
             if (DEBUG) {
                 PtrCLog.i(LOG_TAG, "PtrUIHandler: onUIRefreshComplete");
+                PtrCLog.i(LOG_TAG, Log.getStackTraceString(new Throwable()));
             }
             mPtrUIHandlerHolder.onUIRefreshComplete(this);
         }
